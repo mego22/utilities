@@ -1,0 +1,850 @@
+#!/usr/bin/perl
+
+#Server Info: Used to gather important information about a servers such as:
+#serial number, vendor, product, proc info(number of, type), memory info(amount, slots, amount in each slot)
+#network info(active interfaces, IP address, netmask, MAC address) #rpms needed perl-IO-Interface (network info)
+
+use Term::ANSIColor qw(:constants);
+$Term::ANSIColor::AUTORESET = 1;
+#use IO::Socket;
+#use IO::Interface qw(:flags);
+use strict;
+
+my $hostname;
+my @dmidump;
+my $osdistro;
+my $osversion;
+my $osarch;
+my $ostype;
+my $kernel;
+my @systeminfo;
+my $cpumanu;
+my $cpufamily;
+my $cpumodel;
+my $cpuspeed;
+my $cpucount=0;
+my @cpuinfo;
+my $cpu;
+my $virtcpucount=0;
+my $memcount=0;
+my $memmax=0;
+my $memtotal=0;
+my @meminfo;
+my @netinfo;
+my $cardbrand;
+my @wwn;
+my $gpfsver;
+my $quorum;
+my $gpfstype;
+my $node;
+my $powerpathver;
+my $ctdbver;
+my $sambaver;
+my $vmtoolsver;
+my $jbossver;
+my $mysqlver;
+my $httpdver;
+my $wowzaver;
+my $sendmail;
+my @ilodump;
+my $ilourl;
+my $iloip;
+my $ilodhcp;
+my $vmware="no";
+my @lsconf;
+my @tmp;
+my $junk="";
+
+
+###########################################################
+#Main
+###########################################################
+
+#Makes sure the user is ROOT
+`id -u` == 0 || die "You must be root to run this, stopped";
+
+$ostype=`/bin/uname`; chomp($ostype);
+
+
+if ($ostype=~/AIX/){&getinfo_aix;}else{ &getinfo;}
+&softwareinfo;
+&parssysteminfo(@dmidump);
+&parsprocinfo(@dmidump);
+&parsmeminfo(@dmidump);
+#&parsenetinfo;
+&check_networker_backup;
+if ($ostype!~/AIX/){ &fibreinfo;}
+
+&txtout;
+&authinfo;
+if ($ostype=~/AIX/){&netinfo_aix;}else{ &netinfo;}
+&meminfo_out;
+&fibreinfo_out;
+
+############################################################
+#/Main
+############################################################
+
+
+sub softwareinfo{
+
+	if ( -e "/usr/lpp/mmfs/bin/mmfsd" || -e "/usr/lpp/mmfs/bin/aix64/mmfsd64" )
+	{
+		if ($ostype=~/AIX/){
+		$gpfsver=`/usr/bin/lslpp -l |/bin/grep gpfs.base|/bin/tail -1|/bin/awk '{print \$2}'`;
+		}else{
+		$gpfsver=`rpm -qa 2>/dev/null | grep ^gpfs.base | cut -d- -f 2-`;
+		}
+		chomp($gpfsver);
+	}
+
+	if ( -e "/sbin/powermt" || -e "/usr/sbin/powermt")
+	{
+		if ($ostype=~/AIX/){
+		$powerpathver=`/usr/bin/lslpp -l |/bin/grep EMCpower.bas|/bin/tail -1|/bin/awk '{print \$2}'`;
+		}else{
+		$powerpathver=`rpm -qa 2>/dev/null | grep EMC | cut -d- -f 2-`;
+		}
+		chomp($powerpathver);
+	}
+
+	if ( -e "/usr/bin/ctdb" )
+	{	
+		$ctdbver=`rpm -qa 2>/dev/null | grep ^ctdb | cut -d- -f 2-`;
+		chomp($ctdbver);
+	}
+	
+	if ( -e "/usr/sbin/smbd" )
+	{
+		$sambaver=`rpm -qa 2>/dev/null | grep ^samba.-[0123456789] | cut -d- -f2-`;
+		if("$sambaver" eq ""){
+			$sambaver=`rpm -qa 2>/dev/null | grep ^samba | grep -v -e cifsmount -e winbind -e client -e utils -e doc* -e swat -e common | cut -d- -f 2-`;
+		}
+		chomp($sambaver);
+	}
+
+	if ( -e "/etc/vmware-tools" )
+	{
+		$vmware="yes";
+		$vmtoolsver=`/usr/bin/vmware-toolbox-cmd -v`;
+		chomp($vmtoolsver);
+	}
+
+	if ( -e "/etc/init.d/jboss" )
+	{
+		my $jbosspass=`/usr/bin/grep PASSWORD= /etc/init.d/jboss | /usr/bin/cut -d'=' -f2`;
+		if("$jbosspass" eq "")
+		{
+			$jbosspass=`/bin/cat /etc/init.d/jboss | /usr/bin/grep shutdown.sh | /usr/bin/cut -d'=' -f3 | /usr/bin/cut -d' ' -f1`;
+		}
+
+		chomp($jbosspass);
+
+		if ( -d "/usr/local/jboss" ){
+			if ( -e "/usr/local/jboss/bin/twiddle.sh" ){
+				$jbossver=`/usr/local/jboss/bin/twiddle.sh --user=admin --password="$jbosspass" get "jboss.system:type=Server" VersionNumber | /usr/bin/cut -d'=' -f2`;
+				if($jbossver =~ m/ERROR/){
+					if( -d, glob "/usr/local/jboss-*"){
+						my $dir = `/bin/ls -d /usr/local/jboss-*`;
+						(my $a, my $b, my $c, my $jboss) = split("/", $dir);
+						($a, $b, $jbossver) = split("-", $jboss);
+						chomp($jbossver);
+						if($jbossver =~ /6./){
+							$jbossver = "EAP-".$jbossver;
+						}
+						if($jbossver =~ /5.1/){
+							$jbossver = $jbossver.".0";
+						}
+					}
+				}
+			} elsif( -d, glob "/usr/local/jboss-*"){
+				my $dir = `/bin/ls -d /usr/local/jboss-*`;
+				(my $a, my $b, my $c, my $jboss) = split("/", $dir);
+				($a, $b, $jbossver) = split("-", $jboss);
+				if($jbossver =~ /6./){
+					$jbossver = "EAP-".$jbossver;
+				}
+			}
+			chomp($jbossver);
+		} 
+
+		if ( -d "/Java/jboss-4.3.0" ){
+			my $dir = `/bin/ls -d /Java/jboss-4.3.0`;
+			(my $a, my $b, my $jboss) = split("/", $dir);
+			($a,$jbossver) = split("-", $jboss);
+			chomp($jbossver);
+			if($jbossver =~ /4.3.0/){
+				$jbossver = $jbossver.".GA";
+			}
+			$jbossver=$jbossver."_EMove";
+			chomp($jbossver);
+		}
+	}
+
+	if ( -e "/usr/bin/mysql" )
+	{
+		if ( -e "/etc/init.d/mysqld" )
+		{
+			$mysqlver=`rpm -qa 2>/dev/null | grep -i ^mysql-server-[0123456789] | cut -d- -f3-`;
+			chomp($mysqlver);
+		} else {
+			$mysqlver=`rpm -qa 2>/dev/null | grep -i ^mysql-server-advanced-[0123456789] | cut -d- -f4-`;
+			chomp($mysqlver);
+		}
+	}
+
+	if ( -e "/etc/init.d/httpd" )
+	{
+		$httpdver=`rpm -qa 2>/dev/null | grep -i ^httpd-[0123456789] | cut -d- -f2-`;
+		chomp($httpdver);
+	}
+
+	if ( -e "/etc/init.d/WowzaMediaServer" )
+	{
+		$wowzaver=`rpm -qa 2>/dev/null | grep -i ^wowzamediaserver-[0123456789] | cut -d- -f2-`;
+		chomp($wowzaver);
+	}
+
+	$sendmail=`/usr/bin/grep ^DS /etc/mail/sendmail.cf`;
+	chomp($sendmail);
+}
+sub fibreinfo{
+
+  my $lsmod = "/sbin/lsmod";
+
+  if ( `$lsmod` =~ 'lpfc')
+  {
+	 $cardbrand = 'lpfc';
+  }elsif( `$lsmod` =~ 'qla2xxx')
+  {
+	$cardbrand = 'qla2xxx';
+  }else
+  {
+	$cardbrand = 'unknown';
+  }
+  
+if ($cardbrand ne 'unknown')
+{
+  if (($osversion >= 40 ) && ($osversion <= 50))
+  {
+	my $infodir="/proc/scsi";
+
+	opendir(FIBREDIR, "$infodir/$cardbrand") || die("Cannot open directory $infodir/$cardbrand, stopping");
+	my @cardfiles=readdir(FIBREDIR);
+	@cardfiles = sort(@cardfiles);
+	closedir(FIBREDIR);
+	
+	for my $card(@cardfiles){
+		unless (( $card eq ".") || ( $card eq ".."))
+		{
+			open (FILE, "$infodir/$cardbrand/$card") || die("Cannot open file $infodir/$cardbrand/$card, stopping");
+			my @lines = <FILE>;
+			close (FILE);
+			for my $line (@lines)
+			{
+				if ( $line =~ 'adapter-node')
+				{
+					my @tmparray = split(/=/,$line);
+					chomp($tmparray[1]);
+					chomp($tmparray[1]);
+					push (@wwn, $tmparray[1]);
+				}
+			}
+		}
+	} 
+  }
+  elsif($osversion >=50)
+  {
+	my $infodir="/sys/class/fc_host";
+
+	opendir(FIBREDIR, "$infodir") || die("Cannot open directory $infodir/$cardbrand, stopping");
+        my @cardfiles=readdir(FIBREDIR);
+        @cardfiles = sort(@cardfiles);
+        closedir(FIBREDIR);
+
+        for my $card(@cardfiles)
+	{
+                unless (( $card eq ".") || ( $card eq ".."))
+                {
+                        opendir(FILEDIR, "$infodir/$card") || die("Cannot open directory $infodir/$card, stopping");
+                        my @cardfiles2 = readdir(FILEDIR);
+			closedir(FILEDIR);
+			for my $file (@cardfiles2)
+			{
+				if($file eq 'port_name')
+				{
+					open (FILE, "$infodir/$card/$file") || die("Cannot open file $infodir/$card/$file, stopping");
+					my @lines = <FILE>;
+					close (FILE);
+
+					for my $line (@lines)
+					{
+						my @tmparray = split(/x/,$line);
+						chomp($tmparray[1]);
+						push (@wwn, $tmparray[1]);
+					}
+				}
+			}
+					
+                }
+        }
+  }
+
+}
+}
+
+sub fibreinfo_out{
+
+if ($cardbrand ne 'unknown')
+{
+  #Fibre Card info
+  #print BOLD "\nFibre Card Information\n";
+  if ($cardbrand =~ 'qla')
+  {
+  	for my $name (@wwn)
+	{
+        	print "SYS:fibre:qlogic:$name\n"
+	}
+  }elsif ($cardbrand =~ 'lpfc')
+  {
+  	for my $name (@wwn)
+	{
+        	print "SYS:fibre:emulex:$name\n"
+	}
+  }
+
+}
+
+}
+sub getinfo_aix{
+
+  $hostname=`/bin/hostname`;
+  chomp($hostname);
+
+  $kernel=`/usr/bin/lslpp -l|/bin/grep -y bos.mp|/bin/tail -1`;
+  chomp($kernel);	
+  
+  ($junk,$junk,$kernel)=split / +/,$kernel;
+  @lsconf=`/usr/sbin/lsconf`;
+  @tmp=grep /Kernel Type/,@lsconf;
+  ($junk,$osarch)=split /: /,$tmp[$#tmp];
+  chomp($osarch);
+
+  @tmp=grep /Processor Type/,@lsconf;
+  ($junk,$cpumanu)=split /: /,$tmp[$#tmp];
+  chomp($cpumanu);
+
+  @tmp=grep /^Memory Size/,@lsconf;
+  ($junk,$memtotal)=split /: /,$tmp[$#tmp];
+  chomp($memtotal);$memtotal=~s/MB//g;
+
+  @tmp=grep /Good Memory Size/,@lsconf;
+  ($junk,$memmax)=split /: /,$tmp[$#tmp];
+  chomp($memmax);
+
+  @tmp=grep /Processor Implementation Mode/,@lsconf;
+  ($junk,$cpufamily)=split /: /,$tmp[$#tmp];
+  chomp($cpufamily);
+
+  $cpumodel=" ";
+  @tmp=grep /Processor Clock Speed/,@lsconf;
+  ($junk,$cpuspeed)=split /: /,$tmp[$#tmp];
+  chomp($cpuspeed);
+
+  @tmp=grep /Number Of Processors/,@lsconf;
+  ($junk,$virtcpucount)=split /: /,$tmp[$#tmp];
+  chomp($virtcpucount);
+  $cpucount=$virtcpucount;
+
+  $cpu=$cpumanu.' '.$cpufamily.' CPU '.$cpumodel.' '.$cpuspeed; 
+
+  $osversion = $kernel;
+
+    $osdistro="AIX";
+
+}
+
+sub getinfo{
+
+  $hostname=`/bin/hostname`;
+  chomp($hostname);
+  #$ostype=`/bin/uname -o`;
+  #chomp($ostype);
+  $osarch=`/bin/uname -i`;
+  chomp($osarch);
+  $kernel=`/bin/uname -r`;
+  chomp($kernel);
+  @dmidump=`/usr/sbin/dmidecode`;
+  $cpumanu=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f2`;
+  chomp($cpumanu);
+  $cpufamily=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f3`;
+  chomp($cpufamily);
+  $cpumodel=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f15`;
+  chomp($cpumodel);
+  $cpuspeed=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f18`;
+  chomp($cpuspeed);
+  $virtcpucount=`cat /proc/cpuinfo | grep processor | wc -l`;
+  chomp($virtcpucount);
+  $cpu=$cpumanu.' '.$cpufamily.' CPU '.$cpumodel.' '.$cpuspeed; 
+
+  if ( $cpu eq "Intel(R) Xeon(TM) CPU  " ){
+	$cpuspeed=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f5`;
+	chomp($cpuspeed);
+	$cpu=$cpumanu.' '.$cpufamily.' CPU '.$cpuspeed;
+  } elsif( $cpu eq "Intel(R) Xeon(R) CPU  @" ){
+	$cpumodel=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f16`;
+	chomp($cpumodel);
+	$cpuspeed=`grep -m 1 "model name" /proc/cpuinfo | cut -d: -f2 | cut -d' ' -f19`;
+	chomp($cpuspeed);
+	$cpu=$cpumanu.' '.$cpufamily.' CPU '.$cpumodel.' '.$cpuspeed;
+  }
+
+  if ( -e "/etc/redhat-release" ){
+        open (FILE, "/etc/redhat-release") || die "Can't open /etc/redhat/release";
+
+        $osversion = <FILE>;
+        $osversion =~ s/[^\w]//g;
+        $osversion =~ s/[a-z]//gi;
+
+        close (FILE);
+
+   my @tmp=`cat /etc/redhat-release`;
+   if(grep /Red Hat|redhat/,@tmp)
+   {
+    $osdistro="redhat";
+   }
+   elsif(grep /CentOS/,@tmp)
+   {
+    $osdistro="centos";
+   }
+
+  }
+
+}
+
+sub txtout{
+  my $i=0;
+
+  my $tmpprint;
+  my @tmparray;
+
+  #System Info
+  $tmpprint="SYS:hdw:$hostname";
+  for my $line(@systeminfo){
+	$line =~ s/^\s*(\S*(?:\s+\S+)*)\s*$/$1/; #Strip white spaces
+	if (($line !~ m/System Information/) && ($line !~ m/Wake-up/) && ($line !~ m/\t/))
+	{
+	  @tmparray = split /:/, $line;
+	  $tmpprint="$tmpprint:$tmparray[1]";
+	}
+  }
+
+  #hdw:manufacturer:product name:version:serial #:uuid:sku number:family
+  chomp($tmpprint); #chomp off a phantom character
+  $tmpprint =~ s/^\s*(\S*(?:\s+\S+)*)\s*$/$1/; #Strip white spaces
+  if ($ostype=~/AIX/){$tmpprint="SYS:hdw:$hostname:$cpumanu";}
+  print "$tmpprint\n";
+
+  #os:type:arch:distro:version:kernel release
+  print "SYS:os:$ostype:$osarch:$osdistro:$osversion:$kernel\n";
+  if($gpfsver ne "")
+  {
+	if($gpfsver =~ m/3.3.0-5|3.2.1/){
+		$quorum=`/usr/lpp/mmfs/bin/mmgetstate -aLs | /usr/bin/grep $hostname`;
+		chomp($quorum);
+		if($quorum =~ m/quorum/){
+			$node = "server node";
+		} else { 
+			$node = "client node";
+		}
+	} else {
+		$gpfstype=`/usr/lpp/mmfs/bin/mmlslicense -L | /usr/bin/grep $hostname | /usr/bin/awk {'print $3'} 2>&1`;
+		chomp($gpfstype);
+		if($gpfstype =~ m/server/){
+			$node = "server node";
+		} else {
+			$node = "client node";
+		}
+	}
+	print "SYS:gpfs:$gpfsver:$node\n";
+  }
+
+  if($powerpathver ne "")
+  {
+	print "SYS:powerpath:$powerpathver\n";
+  }
+
+  if($ctdbver ne "")
+  {
+	print "SYS:ctdb:$ctdbver\n";
+  }
+
+  if($sambaver ne "")
+  {
+	print "SYS:samba:$sambaver\n";
+  }
+ 
+  if($vmtoolsver ne "")
+  {
+	print "SYS:vmware-tools:$vmtoolsver\n";
+  }
+
+  if($jbossver ne "")
+  {
+	print "SYS:jboss:$jbossver\n";
+  }
+
+  if($mysqlver ne "")
+  {
+	print "SYS:mysql:$mysqlver\n";
+  }
+
+  if($httpdver ne "")
+  {
+	print "SYS:httpd:$httpdver\n";
+  }
+
+  if($wowzaver ne "")
+  {
+	print "SYS:wowza:$wowzaver\n";
+  }
+
+  print "SYS:sendmail:servers:$sendmail\n";
+
+  #CPU Info
+  print "SYS:cpu:info:$cpu\n";
+  if ("$vmware" eq "yes"){
+	print "SYS:cpu:count:$virtcpucount\n";
+	print "SYS:cpu:core:$cpucount\n";
+  } else {
+  	print "SYS:cpu:count:$cpucount\n";
+  	print "SYS:cpu:core:$virtcpucount\n";
+  }
+  #print @cpuinfo;
+
+  #Network Info
+  $i=1;
+  $tmpprint="SYS:net";
+  for my $line (@netinfo){
+        if($i == 1){
+		#device
+                $tmpprint="$tmpprint:$line";
+                $i++;
+        }
+        elsif($i == 2){
+		#ip
+                $tmpprint="$tmpprint:$line";
+                $i++;
+        }
+        elsif($i == 3){
+                #netmask
+                $tmpprint="$tmpprint:$line";
+                $i++;
+        }
+        else{
+                #mac
+                $tmpprint="$tmpprint:$line";
+		print "$tmpprint\n";
+                $i=1;
+		$tmpprint="SYS:net";
+        }
+  }
+
+
+}
+
+sub parssysteminfo{
+    my $count=0;
+    while($_[$count])
+    {
+        if($_[$count] =~ /System Information/)
+        {
+            while($_[$count])
+            {
+                if ($_[$count] =~ /^Handle/)
+                {
+                    last;
+                }else
+                {
+                    push(@systeminfo, $_[$count]);
+                    $count++;
+                }
+            }
+        }
+    
+        $count++;
+    
+    }
+}
+
+sub parsprocinfo{
+    my $count=0;
+    while($_[$count])
+    {
+            if($_[$count] =~ /Processor Information/)
+        {
+                $cpucount++;
+                while($_[$count])
+            {
+                if ($_[$count] =~ /^Handle/)
+                {
+                    last;
+                }else
+                {
+                    push(@cpuinfo, $_[$count]);
+                    $count++;
+                }    
+                }
+            }
+        $count++;
+    }
+}
+
+sub parsmeminfo
+{
+    my $count=0;
+    while($_[$count])
+    {
+	if($_[$count] =~ /Physical Memory Array$/)
+        {
+                while($_[$count])
+                {
+                        if($_[$count] =~ /^Handle/){
+                            last;
+			}
+			else{
+				if($_[$count] =~ /Use:/){
+					if($_[$count] !~ /System Memory/){
+		     	    			last;
+					}
+					else{
+						$count++;
+					}
+				}
+				elsif($_[$count] =~ /Number Of Devices/){
+                    			my @tmp = split(/:/,$_[$count]);
+                    			chomp (@tmp);
+                    			$memcount = $memcount + $tmp[1];
+                    			$count++;
+                		}
+				elsif($_[$count] =~ /Maximum Capacity:/){
+                        		#push(@meminfo, $_[$count]);
+					@tmp = split(/:/,$_[$count]);
+					@tmp = split(/ /,$tmp[1]);
+					$memmax = $memmax + $tmp[1];
+                        		$count++;
+                		}
+				else{
+                    			$count++;
+                		}
+			}
+		}
+	}
+	else{
+		$count++;
+	}
+    }
+
+    $count=0;
+    while($_[$count]){
+        if($_[$count] =~ /Memory Device$/){
+            while($_[$count]){
+                if($_[$count] =~ /^Handle/){
+                	last;
+                }
+		elsif($_[$count] =~ /Size:/){
+                	push(@meminfo, $_[$count]);
+                	$count++;
+                }
+		elsif($_[$count] =~ /Type:/){
+			push(@meminfo, $_[$count]);
+			$count++;
+		}
+		else{
+                	$count++;
+                }
+            }
+        }
+        $count++;
+    }
+}
+
+sub meminfo_out{
+
+  my $tmpmemcount=1;
+  my $memdevline=1;
+  my $arraycount=0;
+
+  while($tmpmemcount <= $memcount)
+  {
+   my @tmp = ($meminfo[$arraycount]  =~ m/(\d+)/g);
+   $memtotal=$memtotal+$tmp[0];
+
+   $meminfo[$arraycount]  =~ s/^\s*(\S*(?:\s+\S+)*)\s*$/$1/; #Strip white spaces
+   $meminfo[$arraycount+1]  =~ s/^\s*(\S*(?:\s+\S+)*)\s*$/$1/; #Strip white spaces
+	#SYS:mem:size:type
+         printf "SYS:mem:%s:%s:%s\n", $tmpmemcount, $meminfo[$arraycount],$meminfo[$arraycount+1];
+         $arraycount = $arraycount+2;
+         $tmpmemcount++;
+  }
+
+  print "SYS:memmax:$memmax\n"; #Prints max capacity
+  print "SYS:memtotal:$memtotal MB\n";
+
+}
+
+sub netinfo_aix
+{
+
+my (@devices, %dev_info, @ips, $mac, $ip);
+
+@tmp=`/usr/sbin/ifconfig -a|/bin/grep flags`;
+pop(@tmp);
+foreach my $device (@tmp)
+{
+  ($device)=split /:/,$device;
+  push(@devices,$device);
+}
+
+@devices=sort @devices;
+
+foreach my $device (@devices)
+{
+ my @deviceinfo=`/usr/sbin/ifconfig $device`;
+ $mac=`/usr/bin/entstat -d $device|/usr/bin/grep "Hardware Address"|/usr/bin/cut -f3 -d' '`;chomp $mac;
+ foreach my $line (@deviceinfo)
+ {
+  if(($line =~ m/inet/) && ($line !~ m/inet6/))
+  {
+   ($junk, $junk, $ip, my $junk) = split(/\s+/,$line);
+   $ip=~s/ //g;
+   $dev_info{$device}="$dev_info{$device}$mac:$ip";
+   $ip="";$mac="";
+  }
+ }
+}
+
+foreach my $key (sort keys %dev_info)
+{
+ print "SYS:net:$key:$dev_info{$key}\n";
+}
+
+}
+sub netinfo
+{
+
+my (@devices, %dev_info, @ips, $mac, $ip);
+my $sysnet='/sys/class/net';
+
+opendir(DIR, $sysnet) || die;
+
+
+while (my $device = readdir (DIR))
+{
+  next if ($device !~ m/eth/);
+  push(@devices,$device);
+}
+
+@devices=sort @devices;
+
+foreach my $device (@devices)
+{
+ my @deviceinfo=`/sbin/ip addr show $device`;
+ foreach my $line (@deviceinfo)
+ {
+  chomp($line);
+  if ($line =~ m/link\/ether/)
+  {
+   ($junk, $junk, $mac, my $junk) = split(/\s+/, $line);
+   $mac=~s/ //g;
+  }
+
+  if(($line =~ m/inet/) && ($line !~ m/inet6/))
+  {
+   ($junk, $junk, $ip, my $junk) = split(/\s+/,$line);
+   $ip=~s/ //g;
+   $dev_info{$device}="$dev_info{$device}$mac:$ip";
+   $ip="";$mac="";
+  }
+ }
+}
+
+foreach my $key (sort keys %dev_info)
+{
+ print "SYS:net:$key:$dev_info{$key}\n";
+}
+
+@ilodump=`/usr/local/admin/bin/manageilo --getnetinfo 2>&1`;
+
+foreach my $line (@dmidump){
+	if($line =~ m/Manufacturer: HP|Manufacturer: Hewlett-Packard/i){
+		for my $ilo (@ilodump){
+			if($ilo =~ /URL/i){
+				(my $x, $ilourl, my $y, $iloip) = split(" ", $ilo);
+
+				chomp($ilourl);
+				chomp($iloip);
+			}
+
+			if($ilo =~ /DHCP/i){
+				(my $x, $ilodhcp) = split(":", $ilo);
+				$ilodhcp =~ s/^\s+//;
+				chomp($ilodhcp);
+			}
+		}
+	}
+}
+
+if($ilourl ne ""){	
+	print "SYS:ilo:net:$ilourl:$iloip\n";
+	print "SYS:ilo:dhcp:$ilodhcp\n";
+}
+
+}
+
+sub authinfo 
+{
+ my $auth;
+ my $authfile="/etc/pam.d/system-auth";
+ $auth="local";
+ 
+if ($ostype=~/AIX/){
+	$authfile="/etc/krb5.conf";
+ 	if (`/bin/grep -y espn  $authfile|/bin/grep -v \\#`){ $auth="ldap";}
+}else{
+ 	if(`grep -e pam_krb5 $authfile`) { $auth="kerberos";}
+ 	if(`grep -e pam_ldap $authfile`){ $auth="ldap";}
+	}
+
+ print "SYS:auth:$auth\n";
+
+}
+sub parsenetinfo{
+
+  my $s = IO::Socket::INET -> new(Proto => 'udp');
+  my @interfaces=$s->if_list;
+
+  for my $if (@interfaces){
+	if($if =~ "eth"){
+		push(@netinfo, $if);
+		push(@netinfo, $s->if_addr($if));
+		push(@netinfo, $s->if_netmask($if));
+		push(@netinfo, $s->if_hwaddr($if));
+	}
+  } 
+
+}
+
+sub check_networker_backup{
+	if (! -x "/usr/sbin/mminfo" || ! -e "/etc/nsr/servers"){return;}
+	@tmp=`cat /etc/nsr/servers`;
+	my ($junk,$backup)=split /\s+/,$tmp[0];
+	chomp $backup;
+	my @output=`/usr/sbin/mminfo -s $backup`;
+	@output=grep / $hostname\./,@output;
+	foreach  my $line (@output){
+		chomp $line;
+		my ($junk1,$junk2,$date,$size,$post,$type,$dir)=split /\s+/,$line;
+		print "BACKUP:NW:$date:$size$post:$type:$dir\n";
+	}
+}

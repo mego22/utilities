@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#Version
+# 1.1 - removed the ntp svn download since puppet will take care of this
+# 1.0 - inital setup
+
+
+if [ "$1" == "" ]
+then
+ nic=`/sbin/ifconfig | grep eth | awk '{print $1}'`
+else
+ nic=$1
+fi
+
+osrel=`perl -pe "s/\D//g" /etc/redhat\-release`
+
+main()
+{
+	#build network config
+	echo -e "Creating the network configs.\n"
+	setnetconfig
+	
+	#back up resolv.conf and ntp.conf
+	echo -e "Backing up.\n"
+	cp /etc/resolv.conf /etc/resolv.conf.bak
+        cp /etc/ntp.conf /etc/ntp.conf.bak
+
+	#bounce network
+	echo -e "Restarting the network.\n"
+	service network restart
+
+	#restore resolv.conf and ntp.conf
+	echo -e "Restoring resolv.conf.\n"
+	cp /etc/resolv.conf.bak /etc/resolv.conf
+        cp /etc/ntp.conf.bak /etc/ntp.conf
+
+}
+
+setnetconfig()
+{
+	IP=`/sbin/ifconfig | grep inet | grep -v -e inet6 -e 127.0.0.1 | awk '{print $2}' | cut -d: -f2`
+	NM=`/sbin/ifconfig | grep inet | grep -v -e inet6 -e 127.0.0.1 | awk '{print $4}' | cut -d: -f2`
+	GW=`netstat -arn | grep ^0.0.0.0 | awk '{print $2}'`
+
+	echo -e "DEVICE=$nic\nBOOTPROTO=static\nIPADDR=$IP\nNETMASK=$NM\nGATEWAY=$GW\nONBOOT=yes\nTYPE=Ethernet" > /etc/sysconfig/network-scripts/ifcfg-$nic
+}
+
+main

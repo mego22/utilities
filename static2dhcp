@@ -1,0 +1,57 @@
+#!/bin/bash
+
+
+
+if [ "$1" == "" ]
+then
+ nic=`/sbin/ifconfig | grep eth | awk '{print $1}'`
+else
+ nic=$1
+fi
+
+host=`/bin/hostname`
+osrel=`perl -pe "s/\D//g" /etc/redhat\-release`
+
+main()
+{
+	#build network config
+	echo -e "Creating the network configs.\n"
+	setnetconfig
+	
+	#back up resolv.conf
+	echo -e "Backing up.\n"
+	cp /etc/resolv.conf /etc/resolv.conf.bak
+
+	#bounce network
+	echo -e "Restarting the network.\n"
+	service network restart
+
+	#restore resolv.conf
+	echo -e "Restoring resolv.conf.\n"
+	cp /etc/resolv.conf.bak /etc/resolv.conf
+
+	#set ntp
+	echo -e "Setting NTP.\n"
+	setntpconfig
+}
+
+setnetconfig()
+{
+	echo -e "DEVICE=$nic\nBOOTPROTO=dhcp\nDHCP_HOSTNAME=$host\nONBOOT=yes" > /etc/sysconfig/network-scripts/ifcfg-$nic
+}
+
+setntpconfig()
+{
+	service ntpd stop
+	ntpdate time.espn.com
+	if [ $osrel -lt 60 ]
+	then
+	 svn cat --username=kickstart --password=kickstart --no-auth-cache http://subversion.corp.espn.pvt/repositories/unix/os/etc/ntp.conf > /etc/ntp.conf
+	else
+         svn cat --username=kickstart --password=kickstart --no-auth-cache http://subversion.corp.espn.pvt/repositories/unix/os/etc/ntp.conf > /etc/ntp.conf
+        fi
+
+	service ntpd start
+}
+
+main
