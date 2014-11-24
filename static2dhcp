@@ -30,28 +30,11 @@ main()
 	echo -e "Restoring resolv.conf.\n"
 	cp /etc/resolv.conf.bak /etc/resolv.conf
 
-	#set ntp
-	echo -e "Setting NTP.\n"
-	setntpconfig
 }
 
 setnetconfig()
 {
 	echo -e "DEVICE=$nic\nBOOTPROTO=dhcp\nDHCP_HOSTNAME=$host\nONBOOT=yes" > /etc/sysconfig/network-scripts/ifcfg-$nic
-}
-
-setntpconfig()
-{
-	service ntpd stop
-	ntpdate time.espn.com
-	if [ $osrel -lt 60 ]
-	then
-	 svn cat --username=kickstart --password=kickstart --no-auth-cache http://subversion.corp.espn.pvt/repositories/unix/os/etc/ntp.conf > /etc/ntp.conf
-	else
-         svn cat --username=kickstart --password=kickstart --no-auth-cache http://subversion.corp.espn.pvt/repositories/unix/os/etc/ntp.conf > /etc/ntp.conf
-        fi
-
-	service ntpd start
 }
 
 main
