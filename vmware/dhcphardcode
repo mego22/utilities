@@ -1,0 +1,12 @@
+#!/bin/bash
+
+DHCP_CONFIG="/Library/Preferences/VMware Fusion/vmnet8/dhcpd.conf"
+
+subnet=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep subnet | awk '{print $2}' | cut -d. -f1,2,3`
+netmask=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep subnet | awk '{print $4}'`
+min=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep range | awk '{print $2}' | cut -d. -f4`
+max=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep range | awk '{print $3}' | cut -d. -f4 | cut -d\; -f1`
+diff=$((max-min+1));
+uniqoctet=$(( min + RANDOM%diff ))
+
+echo "$subnet.$uniqoctet"
