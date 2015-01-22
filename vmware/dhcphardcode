@@ -1,9 +1,12 @@
 #!/bin/bash
 
+VMWARE_CONFIGS="~/Documents/Virtual\ Machines.localized/"
+VMS=()
 DHCP_CONFIG="/Library/Preferences/VMware Fusion/vmnet8/dhcpd.conf"
 #netmask=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep subnet | awk '{print $4}'`
 
 uniq_ip () {
+
   subnet=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep subnet | awk '{print $2}' | cut -d. -f1,2,3`
   min=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep range | awk '{print $2}' | cut -d. -f4`
   max=`awk '/subnet/,/\}/' "${DHCP_CONFIG}" | grep range | awk '{print $3}' | cut -d. -f4 | cut -d\; -f1`
@@ -20,6 +23,20 @@ uniq_ip () {
   done
 
   echo "$subnet.$uniqoctet"
+
+}
+
+choose_vm () {
+
+  for VM in `ls ${VMWARE_CONFIGS}`;do
+    f=`echo ${VM} | cut -d. -f1`
+    VMS+=($f)
+  done
+
+}
+
+vm_mac () {
+  echo
 }
 
 ip=$(uniq_ip)
