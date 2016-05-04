@@ -1,0 +1,29 @@
+#!/bin/bash
+
+set -e
+
+# MD file to break up
+DOC=$1
+if [ -z $DOC ]; then echo "I need a document to parse."; exit 1; fi
+if [ ! -f $DOC ]; then echo "$DOC is not a file."; exit 1; fi
+
+# Where to put the new files
+# Clip the trialing / if present
+OUTPUT_DIR=${2%/}
+if [ -z $OUTPUT_DIR ]; then echo "Where do you want the docs?"; exit 1; fi
+if [ ! -d $OUTPUT_DIR ]; then echo "$OUTPUT_DIR is not a directory."; exit 1; fi
+
+# Change IFS from whitespace to newline
+OLD_IFS=$IFS
+IFS=$'\n'
+
+# Find each H1 heading then pull out each section into seperate files
+for HEADING in `grep "^# " $DOC`; do
+  FILE=`echo "${HEADING}" | tr -d [:space:] | tr [:lower:] [:upper:] | tr -d '#'`
+  echo "${OUTPUT_DIR}/${FILE}.md"
+  sed -n -e "/$HEADING/,/^#\ /p" ${DOC} | sed '$d' > ${OUTPUT_DIR}/${FILE}.md
+done
+
+# Set IFS back
+IFS=$OLD_IFS
+
