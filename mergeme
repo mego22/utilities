@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+## Simple script to remind me how to properly merge to master
+
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+if [ "${current_branch}" == "master" ]; then echo -e "\033[1;31mYou can't merge master on to master\033[0m"; exit; fi
+
+echo -e "\033[32mHere we go\033[0m"
+echo -e "\033[32mAll about that rebase\033[0m"
+echo "git checkout master"
+echo "git pull origin master"
+echo "git checkout ${current_branch}"
+echo "git rebase master"
+echo "git push -f origin ${current_branch}"
+
+echo -e "\n\033[93mTime to shipit\033[0m"
+echo "git checkout master"
+echo "git merge --ff-only ${current_branch}"
+echo "git push origin master"
+
+echo -e "\n\033[35mCleanliness is next to godliness\033[0m"
+echo "git push origin :${current_branch}"
+echo "git branch -D ${current_branch}"
