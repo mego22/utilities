@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+###
+# Start screensaver on OSX
+###
+
+open -a ScreenSaverEngine
+
