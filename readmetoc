@@ -1,0 +1,25 @@
+#!/usr/bin/env bash 
+
+###
+# Used to generate a TOC for a README.md in a repo.
+###
+
+working_dir=$(PWD)
+
+printTOC() {
+  local dir=${1:-.} whiteSpace=$2 file
+  for file in "$dir"/*; do
+    [ -e "${file}" ] || [ -L "${file}" ] || continue
+    if [ -d "${file}" ]; then
+      repoLink=$(echo "${file}" | awk -F "${working_dir}/" '{print $2}')
+      printf '%s* [%q](%s)\n' "${whiteSpace}" "${file##*/}" "${repoLink}"
+      printTOC "${file}" "${whiteSpace}  "
+    else
+      if [[ "${file}" =~ README.md ]]; then continue; fi
+      repoLink=$(echo "${file}" | awk -F "${working_dir}/" '{print $2}')
+      printf '%s* [%q](%s)\n' "${whiteSpace}" "${file##*/}" "${repoLink}"
+    fi
+  done
+}
+
+printTOC "${working_dir}"
