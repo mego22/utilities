@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+sft_output=$(sft list-accounts | grep -i spreedly )
+
+if echo "${sft_output}" | grep "Valid for" > /dev/null; then
+  echo "${sft_output}" | awk '{print "sft:", $NF}'
+else
+  echo "sft: logged out"
+fi
