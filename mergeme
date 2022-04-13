@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-## Simple script to remind me how to properly merge to master
+## Simple script to remind me how to properly merge to main
 
 BRANCH_NAME=$1
 
@@ -8,20 +8,20 @@ if [ -z "${BRANCH_NAME}" ]; then
   BRANCH_NAME=$(git rev-parse --abbrev-ref HEAD)
 fi
 
-if [ "${BRANCH_NAME}" == "master" ]; then echo -e "\033[1;31mYou can't merge master on to master\033[0m"; exit; fi
+if [ "${BRANCH_NAME}" == "main" ]; then echo -e "\033[1;31mYou can't merge main on to main\033[0m"; exit; fi
 
 echo -e "\033[32mHere we go\033[0m"
 echo -e "\033[32mAll about that rebase\033[0m"
-echo "git checkout master"
-echo "git pull origin master"
+echo "git checkout main"
+echo "git pull origin main"
 echo "git checkout ${BRANCH_NAME}"
-echo "git rebase master"
+echo "git rebase main"
 echo "git push -f origin ${BRANCH_NAME}"
 
 echo -e "\n\033[93mTime to shipit\033[0m"
-echo "git checkout master"
+echo "git checkout main"
 echo "git merge --ff-only ${BRANCH_NAME}"
-echo "git push origin master"
+echo "git push origin main"
 
 echo -e "\n\033[35mCleanliness is next to godliness\033[0m"
 echo "gbr ${BRANCH_NAME}"
